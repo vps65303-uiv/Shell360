@@ -2,7 +2,8 @@ import requests, subprocess, time
 
 TOKEN = "8508402230:AAGK5iP1fxc7Dscu5pDmqWkAGLCCYLtKrB0"
 CHAT_ID = "8897834377"
-BASE = f"https://api.telegram.org/bot{TOKEN}"
+BASE = "https://api.telegram.org/bot" + TOKEN
+
 
 offset = 0
 
