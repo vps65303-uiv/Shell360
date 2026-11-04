@@ -17,7 +17,7 @@ EXTERNAL_IP = "193.222.96.71"
 def start_localtunnel():
     time.sleep(3)
     try:
-        os.system("lt --port 8080 > localtunnel_log.txt 2>&1 &")
+        os.system("lt --port 8443 > localtunnel_log.txt 2>&1 &")
         
         public_url = None
         for _ in range(12):
@@ -198,4 +198,4 @@ if __name__ == "__main__":
     t.daemon = True
     t.start()
     
-    app.run(host="0.0.0.0", port=8080, debug=False)
+    app.run(host="0.0.0.0", port=8443, debug=False)
