@@ -10,25 +10,35 @@ import numpy as np
 
 app = Flask(__name__)
 
-# دالة لتسجيل الجهاز تلقائياً في Tailscale باستخدام مفتاح المصادقة الخاص بك
-def setup_tailscale_and_notify():
-    time.sleep(2)
-    auth_key = "d643e324a515fce13c286c9db7e473590272330896ffcbde0a948783afdd0e0b"
+# دالة لتسجيل ngrok بالتوكن الخاص بك وتوليد الرابط العام تلقائياً
+def setup_ngrok_and_notify():
+    time.sleep(3) # الانتظار حتى يتأكد أن سيرفر الفلاسك قد بدأ بالعمل
+    authtoken = "3L3e1ZwYliU5zCTToq5Ms4LL6qG_jSKSRVmPqoRJkt1LFNVX"
+    
     try:
-        print("[+] جاري تفعيل وإعداد Tailscale...")
-        subprocess.run("tailscale up --authkey={}".format(auth_key), shell=True, check=True)
+        print("[+] جاري إعداد وتثبيت توكن ngrok...")
+        subprocess.run(f"ngrok config add-authtoken {authtoken}", shell=True, check=True)
         
-        # استخراج الأيبي الخاص بـ Tailscale
-        res = subprocess.run("tailscale ip -4", shell=True, capture_output=True, text=True)
-        ts_ip = res.stdout.strip()
+        print("[+] جاري إنشاء النفق الآمن (Tunnel) على المنفذ 8443...")
+        # تشغيل ngrok في الخلفية وتوجيه الاتصال نحو البورت 8443
+        subprocess.run("ngrok http 8443 > /dev/null &", shell=True)
+        time.sleep(4)
+        
+        # استخراج الرابط النشط من واجهة ngrok البرمجية المحلية (API)
+        import urllib.request
+        import json
+        
+        req = urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels")
+        data = json.loads(req.read().decode('utf-8'))
+        public_url = data['tunnels'][0]['public_url']
         
         print("\n" + "="*60)
-        print("[+] تم ربط الجهاز بشبكة Tailscale بنجاح!")
-        print("[+] عنوان الأيبي الخاص بك للاتصال من أي مكان:")
-        print("🔗 http://{}:8443".format(ts_ip if ts_ip else "100.x.x.x"))
+        print("[+] تم إنشاء نفق ngrok بنجاح يا محمد!")
+        print("[+] الرابط الكامل للاتصال من هاتفك من أي مكان:")
+        print(f"🔗 {public_url}")
         print("="*60 + "\n")
     except Exception as e:
-        print("[-] خطأ في إعداد Tailscale: {}".format(e))
+        print(f"[-] تنبيه: لم يتم جلب الرابط تلقائياً، يمكنك فتح طرفية جديدة وكتابة: ngrok http 8443 (خطأ: {e})")
 
 # دالة التقاط الشاشة للبث الحي
 def generate_frames():
@@ -83,7 +93,7 @@ HTML_TEMPLATE = """
         <img src="{{ url_for('video_feed') }}" alt="Live Stream">
     </div>
     <div class="container">
-        <h2>⚡ Linux Remote Web Shell (Tailscale Secured) ⚡</h2>
+        <h2>⚡ Linux Remote Web Shell (Ngrok Secured) ⚡</h2>
         <div class="section">
             <div class="path-bar">📁 المسار الحالي: <code>{{ current_path }}</code></div>
             <a href="/?path={{ parent_path }}"><button>⬆ العودة للمجلد الأعلى</button></a>
@@ -138,25 +148,25 @@ def index():
     current_path = request.args.get('path', os.getcwd())
     current_path = os.path.abspath(current_path)
     parent_path = os.path.dirname(current_path)
-    output = "أهلاً بك يا محمد! نظام التحكم الآمن يعمل بكفاءة:\n"
+    output = "أهلاً بك يا محمد! نظام التحكم الآمن يعمل عبر Ngrok:\n"
     
     if request.method == "POST":
         action = request.form.get("action")
         if action == "cmd":
             command = request.form.get("command")
             if command:
-                output += "linux@root:{}$ {}\n".format(current_path, command)
+                output += f"linux@root:{current_path}$ {command}\n"
                 try:
                     res = subprocess.run(command, shell=True, cwd=current_path, capture_output=True, text=True, timeout=15)
                     output += res.stdout + res.stderr
                 except Exception as e:
-                    output += "Error: {}\n".format(str(e))
+                    output += f"Error: {e}\n"
         elif action == "upload":
             uploaded_file = request.files.get('file')
             if uploaded_file:
                 file_path = os.path.join(current_path, uploaded_file.filename)
                 uploaded_file.save(file_path)
-                output += "[+] تم رفع الملف بنجاح إلى: {}\n".format(file_path)
+                output += f"[+] تم رفع الملف بنجاح إلى: {file_path}\n"
 
     items = []
     try:
@@ -167,7 +177,7 @@ def index():
                 'path': entry.path
             })
     except Exception as e:
-        output += "خطأ: {}\n".format(str(e))
+        output += f"خطأ: {e}\n"
 
     return render_template_string(HTML_TEMPLATE, current_path=current_path, parent_path=parent_path, output=output, items=items)
 
@@ -183,7 +193,7 @@ def download():
     return "الملف غير موجود!", 404
 
 if __name__ == "__main__":
-    t = threading.Thread(target=setup_tailscale_and_notify)
+    t = threading.Thread(target=setup_ngrok_and_notify)
     t.daemon = True
     t.start()
     
