@@ -10,15 +10,25 @@ import numpy as np
 
 app = Flask(__name__)
 
-EXTERNAL_IP = "193.222.96.71"
-
-# دالة تشغيل بايثون localtunnel أو تنبيه لتثبيت مكتبة بايثون البسيطة
-def start_tunnel_notice():
-    time.sleep(3)
-    print("\n" + "="*60)
-    print("[+] سيرفر الفلاسك يعمل الآن محلياً بنجاح.")
-    print("[+] البث الحي وواجهة التحكم جاهزة على البورت 8443.")
-    print("="*60 + "\n")
+# دالة لتسجيل الجهاز تلقائياً في Tailscale باستخدام مفتاح المصادقة الخاص بك
+def setup_tailscale_and_notify():
+    time.sleep(2)
+    auth_key = "d643e324a515fce13c286c9db7e473590272330896ffcbde0a948783afdd0e0b"
+    try:
+        print("[+] جاري تفعيل وإعداد Tailscale...")
+        subprocess.run("tailscale up --authkey={}".format(auth_key), shell=True, check=True)
+        
+        # استخراج الأيبي الخاص بـ Tailscale
+        res = subprocess.run("tailscale ip -4", shell=True, capture_output=True, text=True)
+        ts_ip = res.stdout.strip()
+        
+        print("\n" + "="*60)
+        print("[+] تم ربط الجهاز بشبكة Tailscale بنجاح!")
+        print("[+] عنوان الأيبي الخاص بك للاتصال من أي مكان:")
+        print("🔗 http://{}:8443".format(ts_ip if ts_ip else "100.x.x.x"))
+        print("="*60 + "\n")
+    except Exception as e:
+        print("[-] خطأ في إعداد Tailscale: {}".format(e))
 
 # دالة التقاط الشاشة للبث الحي
 def generate_frames():
@@ -73,7 +83,7 @@ HTML_TEMPLATE = """
         <img src="{{ url_for('video_feed') }}" alt="Live Stream">
     </div>
     <div class="container">
-        <h2>⚡ Linux Remote Web Shell (Pure Python Edition) ⚡</h2>
+        <h2>⚡ Linux Remote Web Shell (Tailscale Secured) ⚡</h2>
         <div class="section">
             <div class="path-bar">📁 المسار الحالي: <code>{{ current_path }}</code></div>
             <a href="/?path={{ parent_path }}"><button>⬆ العودة للمجلد الأعلى</button></a>
@@ -128,7 +138,7 @@ def index():
     current_path = request.args.get('path', os.getcwd())
     current_path = os.path.abspath(current_path)
     parent_path = os.path.dirname(current_path)
-    output = "أهلاً بك يا محمد! نظام التحكم يعمل بلغة بايثون البحتة على البورت 8443:\n"
+    output = "أهلاً بك يا محمد! نظام التحكم الآمن يعمل بكفاءة:\n"
     
     if request.method == "POST":
         action = request.form.get("action")
@@ -173,9 +183,8 @@ def download():
     return "الملف غير موجود!", 404
 
 if __name__ == "__main__":
-    t = threading.Thread(target=start_tunnel_notice)
+    t = threading.Thread(target=setup_tailscale_and_notify)
     t.daemon = True
     t.start()
     
-    # استخدام البورت 8443 المفتوح حصراً لتجنب البروكسي
     app.run(host="0.0.0.0", port=8443, debug=False)
